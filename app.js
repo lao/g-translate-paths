@@ -1,18 +1,16 @@
 const {TranslationServiceClient} = require('@google-cloud/translate');
 const fs = require('fs');
 
-// Instantiates a client
 const translationClient = new TranslationServiceClient();
 
 const projectId = 'hyf-translation-project';
 const location = 'global';
 
 async function translateText(text) {
-    // Construct request
     const request = {
         parent: `projects/${projectId}/locations/${location}`,
         contents: [text],
-        mimeType: 'text/plain', // mime types: text/plain, text/html
+        mimeType: 'text/plain',
         sourceLanguageCode: 'en',
         targetLanguageCode: 'pt-br',
     };
@@ -20,39 +18,26 @@ async function translateText(text) {
     // Run request
     const [response] = await translationClient.translateText(request);
 
-    console.log(response);
-
     for (const translation of response.translations) {
-        console.log(`Translation: ${translation.translatedText}`);
         return translation.translatedText
-
     }
 }
 
 // translateText();
 
 const glob = require("glob");
+const mkdirp = require('mkdirp');
 
 const getDirectories = function (src, callback) {
   glob(src + '/**/*', callback);
 };
 
-const readFileContents = function (path) {
-  try {
-    const data = fs.readFileSync(path, 'utf8');
-    return data;
-  } catch (err) {
-    console.error(err);
-    throw err;
-  }
-};
-
-const writeFileContents = function(pathWithFile, content) {
+const writeFileContents = async function(pathWithFile, content) {
   const pathWithoutFile = pathWithFile.substring(0,pathWithFile.lastIndexOf('/')+1)
 
   try {
     if (!fs.existsSync(pathWithoutFile)) {
-      fs.mkdirSync(pathWithoutFile);
+      await mkdirp(pathWithoutFile);
     }
 
     fs.appendFileSync(pathWithFile, content);
@@ -97,26 +82,31 @@ async function* generateChunks(filePath, size) {
   }
 }
 
-getDirectories('hyf-fullstack-curriculum-pt-br', async function (err, res) {
+getDirectories('original', async function (err, res) {
   if (err) return console.log('Error', err);
   
   const allPaths = res;
 
+  // Only translating .md files
   for (let i=0, len=allPaths.length; i<len; i++) {
     if (allPaths[i].indexOf('.md') === -1) continue;
 
     const oldFile = allPaths[i];
     const oldFileName = oldFile.substring(oldFile.lastIndexOf('/')+1);
     const oldFolder = oldFile.substring(0,oldFile.lastIndexOf('/')+1);
-    const newFile = oldFolder + '/pt-br/' + oldFileName 
+    const newFolder = oldFolder.replace('original/', 'pt-br/')
+    const newFile = __dirname + '/' + newFolder + oldFileName 
 
-    // const translatedText = await translateText(readFileContents(oldFile));
-
-    for await(const chunk of generateChunks(oldFile, 30000)) {
-      // do someting with data       
-      writeFileContents(newFile, await translateText(chunk))
+    if (fs.existsSync(newFile)) {
+      // Cleans file before starting
+      fs.writeFileSync(newFile, '');
     }
 
+    for await(const chunk of generateChunks(oldFile, 30000)) {
+      await writeFileContents(newFile, await translateText(chunk));
+    }
+
+    console.log(`File created: ${newFile}`);
   }
   
 });
